@@ -23,6 +23,27 @@ class TLB: # pretty much just a cache, FIFO
             self.evictionIndex = (self.evictionIndex + 1) % self.size
 
 class PageTable: # include a loaded bit for each entry
+    def __init__(self, size: int=2**8):
+        self.size = size
+        self.pageTable = [PTEntry()] * size # list of PTEntries
+
+class Disk:  # AKA Backing Store
+    """
+    The backing store can be represented by a dictionary of size 256
+    where the key is the page number and the value is all 256 bytes in the frame.
+    We can make the value an array of size 256, making it easy to offset into the frame.
+    """
+    def __init__(self, filename: str):
+        self.disk = self.file_to_frames(filename)
+
+    @staticmethod
+    def file_to_frames(filename):
+        frames = {}
+        with open(filename, 'rb') as f:
+            for i in range(256):
+                frames[i] = list(f.read(256))
+        return frames
+class PageTable: # include a loaded bit for each entry
     def __init__(self, size: int=PAGE_TABLE_SIZE):
         self.size = size
         self.pageTable = {}
@@ -35,7 +56,12 @@ class Disk: # AKA Backing Store
 class RAM: # AKA Physical Memory
     def __init__(self, size: int):
         self.size = size
-        self.ram = {}
+        self.ram = [None] * size # list of frames, each fram is a list/string of 256 bytes
+
+class PTEntry:
+    def __init__(self, frameNumber: int=None, loadedBit: int=0):
+        self.frameNumber = frameNumber
+        self.loadedBit = loadedBit
 
 class PTEntry: # page table entry has frame number and loaded bit, the page number is the index of the entry
     def __init__(self, frame: int):
@@ -126,6 +152,8 @@ def main():
             # if hit go to memory
             # get value
 
+        # Read in the entire backing store file into an easy to access data structure
+        disk = Disk("BACKING_STORE.bin")
             #else 
                 # page swap
                     # pop queue
