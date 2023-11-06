@@ -8,21 +8,55 @@ FRAME_SIZE = PAGE_SIZE
 DISK_SIZE = PAGE_TABLE_SIZE * PAGE_SIZE # bytes
 TLB_SIZE = 16
 
-class TLB: # pretty much just a cache, FIFO TLB, might be better to make this a dictionary with key is page number better for searching
-    def __init__(self, size: int=TLB_SIZE):
+
+#Ethan's TLB:
+# class TLB: # pretty much just a cache, FIFO TLB, might be better to make this a dictionary with key is page number better for searching
+#     def __init__(self, size: int=TLB_SIZE):
+#         self.size = size
+#         self.tlb = {} #changed this to a dictionary 
+#         self.evictionIndex = 0 # need to keep track of what we want to evict
+
+#     def add(self, pageNumber: int, frameNumber: int):
+#         # if the tlb is full, remove the first element
+#         if len(self.tlb) < self.size: # if the tlb is not full
+#             self.tlb[pageNumber] = frameNumber
+#         else: # if the tlb is full
+#             removal_key = list(self.tlb)[self.evictionIndex]
+#             self.tlb.pop(removal_key)
+#             self.tlb[pageNumber] = frameNumber
+#             #self.evictionIndex = (self.evictionIndex + 1) % self.size  ### what does this do?
+#             #  --> that's the FIFO part, it's a circular queue (or it used to be)
+
+class TLB: 
+    """
+    Pretty much just a cache, FIFO. Implementing using a circular queue. 
+    The .add() method will add a page, frame pair to the tlb.
+    To check if a page exists in the TLB, just check if the page number is in the tlb. Will
+    be quick because it is of size 16. 
+    """
+    def __init__(self, size: int=16):
         self.size = size
-        self.tlb = {} #changed this to a dictionary 
+        self.tlb = []
         self.evictionIndex = 0 # need to keep track of what we want to evict
 
     def add(self, pageNumber: int, frameNumber: int):
         # if the tlb is full, remove the first element
         if len(self.tlb) < self.size: # if the tlb is not full
-            self.tlb[pageNumber] = frameNumber
+            self.tlb.append((pageNumber, frameNumber))
         else: # if the tlb is full
-            removal_key = list(self.tlb)[self.evictionIndex]
-            self.tlb.pop(removal_key)
-            self.tlb[pageNumber] = frameNumber
-            #self.evictionIndex = (self.evictionIndex + 1) % self.size  ### what does this do?
+            self.tlb[self.evictionIndex] = (pageNumber, frameNumber)
+            self.evictionIndex = (self.evictionIndex + 1) % self.size
+    def contains(self, pageNumber: int):
+        for page, frame in self.tlb:
+            if page == pageNumber:
+                return True
+        return False
+    def getitem(self, pageNumber: int):
+        for page, frame in self.tlb:
+            if page == pageNumber:
+                return frame
+        return None # if not found
+
 
 class PageTable: # include a loaded bit for each entry
     def __init__(self, size: int=PAGE_TABLE_SIZE):
@@ -45,11 +79,6 @@ class Disk:  # AKA Backing Store
             for i in range(256):
                 frames[i] = list(f.read(256))
         return frames
-
-class Disk: # AKA Backing Store
-    def __init__(self, size: int=DISK_SIZE):
-        self.size = size
-        self.disk = {}
 
 class RAM: # AKA Physical Memory
     def __init__(self, size: int):
@@ -155,7 +184,7 @@ def main():
             d = address % PAGE_SIZE
 
             # check tlb, check loaded bit
-            inTLB = p in tlb
+            inTLB = p in tlb.tlb
             if inTLB:
                 tlb_hits+=1 # increment tlb_hits
                 page = tlb.tlb[p] # get page, frame pair
@@ -169,7 +198,7 @@ def main():
                 # increment tlb_misses
                 tlb_misses+=1
                 #check page table, check loaded bit
-                page = pt[p]
+                page = pt.pageTable[p]
                 if page.loadedBit == 1: # if hit go to memory
                     frame_number = page.frameNumber # get frame number from tlb
                     frame_data = memory[frame_number]
@@ -187,7 +216,7 @@ def main():
                         # update pageTable
                         page.frameNumber = free_index
                         page.loadedBit = 1
-                        pt[p] = page # necessary? I do not know if these things update in python
+                        pt[p] = page # necessary? I do not know if these things update in python --> don't think so.
 
                         # update tlb
                         tlb.add(p, free_index)
@@ -199,6 +228,7 @@ def main():
                         # pop queue
                         removal_index = fifo.pop()
                         # QUESTION: should we remove entries in the tlb if they correspond to this frame number?
+                        # Nick's Answer-> I don't think so, the TLB keeps track of its own FIFO data structure.
 
                         # remove from memory - do this by overwriting with new page
                         # add disk page into memory
