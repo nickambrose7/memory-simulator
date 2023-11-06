@@ -31,8 +31,9 @@ class TLB:
     """
     Pretty much just a cache, FIFO. Implementing using a circular queue. 
     The .add() method will add a page, frame pair to the tlb.
-    To check if a page exists in the TLB, just check if the page number is in the tlb. Will
-    be quick because it is of size 16. 
+    The .contains() method will check if a page is in the tlb.
+    The .getitem() method will return the frame number associated with a page number.
+    We are doing a linear search here becasue the tlb is small.
     """
     def __init__(self, size: int=16):
         self.size = size
