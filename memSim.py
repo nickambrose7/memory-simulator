@@ -16,9 +16,9 @@ class TLB: # pretty much just a cache, FIFO
             self.evictionIndex = (self.evictionIndex + 1) % self.size
 
 class PageTable: # include a loaded bit for each entry
-    def __init__(self, size: int=2**8, algorithm: str="fifo"):
+    def __init__(self, size: int=2**8):
         self.size = size
-        self.pageTable = {}
+        self.pageTable = [PTEntry()] * size # list of PTEntries
 
 class Disk:  # AKA Backing Store
     """
@@ -40,7 +40,12 @@ class Disk:  # AKA Backing Store
 class RAM: # AKA Physical Memory
     def __init__(self, size: int):
         self.size = size
-        self.ram = {}
+        self.ram = [None] * size # list of frames, each fram is a list/string of 256 bytes
+
+class PTEntry:
+    def __init__(self, frameNumber: int=None, loadedBit: int=0):
+        self.frameNumber = frameNumber
+        self.loadedBit = loadedBit
 
 
     
