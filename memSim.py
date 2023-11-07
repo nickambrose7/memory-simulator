@@ -27,7 +27,7 @@ class TLB: # pretty much just a cache, FIFO TLB, might be better to make this a 
 class PageTable: # include a loaded bit for each entry
     def __init__(self, size: int=PAGE_TABLE_SIZE):
         self.size = size
-        self.pageTable = [PTEntry()] * size # list of PTEntries
+        self.pageTable = [PTEntry() for _ in range(size)] # list of PTEntries
 
 class Disk:  # AKA Backing Store
     """
@@ -45,11 +45,6 @@ class Disk:  # AKA Backing Store
             for i in range(256):
                 frames[i] = list(f.read(256))
         return frames
-
-class Disk: # AKA Backing Store
-    def __init__(self, size: int=DISK_SIZE):
-        self.size = size
-        self.disk = {}
 
 class RAM: # AKA Physical Memory
     def __init__(self, size: int):
@@ -145,89 +140,115 @@ def main():
         fifo = Queue(maxsize=frames)
 
         # while loop that goes through the addresses
-        while address := f.readline() is not None:
-            # increment addresses read
-            num_addr+=1
-
-            # page number
-            p = address // PAGE_SIZE
-            # page offset
-            d = address % PAGE_SIZE
-
-            # check tlb, check loaded bit
-            inTLB = p in tlb
-            if inTLB:
-                tlb_hits+=1 # increment tlb_hits
-                page = tlb.tlb[p] # get page, frame pair
-                frame_number = page.frameNumber # get frame number from tlb
-                frame_data = memory[frame_number]
-                byte_data = frame_data[d]
-                print(f'{address}, {byte_data}, {frame_number}, {"".join(frame_data)}\n')
-                # Question: if a page#, frame# pair is in the tlb is it guarenteed to be in memory...do we need to check for page faulting here?
-            
+        eof = 0
+        while eof == 0:
+            address = f.readline().strip()
+            if address is None or address == "":
+                eof = 1
             else:
-                # increment tlb_misses
-                tlb_misses+=1
-                #check page table, check loaded bit
-                page = pt[p]
-                if page.loadedBit == 1: # if hit go to memory
-                    frame_number = page.frameNumber # get frame number from tlb
-                    frame_data = memory[frame_number]
-                    byte_data = frame_data[d] # get value
-                    print(f'{address}, {byte_data}, {frame_number}, {"".join(frame_data)}\n')
+                # increment addresses read
+                num_addr+=1
+
+                # page number
+                p = int(address) // PAGE_SIZE
+                # page offset
+                d = int(address) % PAGE_SIZE
+
+                # check tlb, check loaded bit
+                inTLB = p in tlb.tlb
+                if inTLB:
+                    tlb_hits+=1 # increment tlb_hits
+                    frame_number = tlb.tlb.get(p) # get frame number from page-frame pair
+                    frame_data = memory.ram[frame_number]
+                    byte_data = frame_data[d]
+                    print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(str(i) for i in frame_data)))
+                    # Question: if a page#, frame# pair is in the tlb is it guarenteed to be in memory...do we need to check for page faulting here?
                 
-                else: # page fault
-                    page_faults+=1
-                    # check for free frames
-                    if memory.free != 0:
-                        free_index = frames - memory.free
-                        memory[free_index] = disk[p]
-                        memory.free-=1
-
-                        # update pageTable
-                        page.frameNumber = free_index
-                        page.loadedBit = 1
-                        pt[p] = page # necessary? I do not know if these things update in python
-
-                        # update tlb
-                        tlb.add(p, free_index)
-
-                        # put frame in queue
-                        fifo.put(free_index)
-
-                    else: # page swap
-                        # pop queue
-                        removal_index = fifo.pop()
-                        # QUESTION: should we remove entries in the tlb if they correspond to this frame number?
-
-                        # remove from memory - do this by overwriting with new page
-                        # add disk page into memory
-                        memory[removal_index] = disk[p]
-                        memory.free-=1
-
-                        # update pageTable
-                        page.frameNumber = removal_index
-                        page.loadedBit = 1
-                        pt[p] = page # necessary? I do not know if these things update in python
-
-                        # update tlb
-                        tlb.add(p, removal_index)
-
-                        # put frame in queue
-                        fifo.put(removal_index)
+                else:
+                    # increment tlb_misses
+                    tlb_misses+=1
+                    #check page table, check loaded bit
+                    page = pt.pageTable[p]
+                    if page.loadedBit == 1: # if hit go to memory
+                        frame_number = page.frameNumber # get frame number from page table
+                        frame_data = memory.ram[frame_number]
+                        byte_data = frame_data[d] # get value
+                        print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(str(i) for i in frame_data)))
                     
-                    # restart instruction, sike just print the info in the if, else block to simulate restarting
-                    # restarting means looking at only the page table, not the tlb
+                    else: # page fault
+                        page_faults+=1
+                        # check for free frames
+                        if memory.free != 0:
+                            free_index = frames - memory.free
+                            memory.ram[free_index] = disk.disk.get(p)
+                            memory.free = memory.free - 1
+
+                            # update pageTable
+                            pt.pageTable[p].frameNumber = free_index
+                            pt.pageTable[p].loadedBit = 1
+
+                            # update tlb
+                            tlb.add(p, free_index)
+
+                            # put frame in queue
+                            fifo.put(free_index)
+
+                            # get data and print result
+                            frame_data = memory.ram[free_index]
+                            byte_data = frame_data[d]
+                            print("{}, {}, {}, {}".format(address, byte_data, free_index, ''.join(str(i) for i in frame_data)))
+
+                        else: # page swap
+                            # pop queue
+                            removal_index = fifo.pop()
+                            # QUESTION: should we remove entries in the tlb if they correspond to this frame number?
+
+                            # remove from memory - do this by overwriting with new page
+                            # add disk page into memory
+                            memory.ram[removal_index] = disk.disk.get(p)
+                            memory.free-=1
+
+                            # update pageTable
+                            page.frameNumber = removal_index
+                            page.loadedBit = 1
+                            pt.pageTable[p] = page # necessary? I do not know if these things update in python
+
+                            # update tlb
+                            tlb_remove = findPageTLB(tlb.tlb, removal_index)
+                            if tlb_remove is not None:
+                                tlb.tlb.pop(tlb_remove)
+                            tlb.tlb.add(p, removal_index)
+
+                            # put frame in queue
+                            fifo.put(removal_index)
+
+                            # get data and print result
+                            frame_data = memory.ram[removal_index]
+                            byte_data = frame_data[d]
+                            print("{}, {}, {}, {}".format(address, byte_data, str(removal_index), ''.join(str(i) for i in frame_data)))
+                        
+                        # restart instruction, sike just print the info in the if, else block to simulate restarting
+                        # restarting means looking at only the page table, not the tlb
         
         # print statistics
-        print(f'Number of Translated Addresses = {num_addr}\n')
-        print(f'Page Faults = {page_faults}\n')
-        print(f'Page Fault Rate = {(page_faults/num_addr):.3f}\n')
-        print(f'TLB Hits = {tlb_hits}\n')
-        print(f'TLB Misses = {tlb_misses}\n')
-        print(f'TLB Hit Rate = {(tlb_hits/tlb_misses):.3f}\n')
+        print(f"Number of Translated Addresses = {num_addr}")
+        print(f"Page Faults = {page_faults}")
+        print(f"Page Fault Rate = {(page_faults/num_addr):.3f}")
+        print(f"TLB Hits = {tlb_hits}")
+        print(f"TLB Misses = {tlb_misses}")
+        print(f"TLB Hit Rate = {(tlb_hits/tlb_misses):.3f}")
         
     f.close()
+
+def findPageTLB(tlb, frame_num):
+    index = None
+    for x in range(len(tlb.items())):
+        if frame_num == tlb.items()[x]:
+            index = x
+    
+    if index is None:
+        return index
+    return tlb.keys()[index]
 
 if __name__ == "__main__":
     main()
