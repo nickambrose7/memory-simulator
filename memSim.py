@@ -109,7 +109,6 @@ class RAM: # AKA Physical Memory
         self.ram[frameNumber] = None
         self.free+=1
         
-    
 
 class PTEntry:
     def __init__(self, frameNumber: int=None, loadedBit: int=0):
@@ -234,9 +233,9 @@ def main():
                 frame_number = tlb.getitem(p) # get frame number from tlb
                 lruCache.put(p, frame_number) # update lru_cache
                 frame_data = memory.getitem(frame_number) # get frame data from memory
-                byte_data = frame_data[d] # get specific byte data
+                signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                 frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
             else: # check page table
                 tlb_misses+=1
                 # check page table
@@ -244,9 +243,9 @@ def main():
                     frame_number = pt.getframe(p) # get frame number from page table
                     lruCache.put(p, frame_number) # update lru_cache
                     frame_data = memory.getitem(frame_number) # get frame data from memory
-                    byte_data = frame_data[d]
+                    signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                     frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                    print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                    print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
                 else: # page fault
                     page_faults+=1
                     # check for free frames
@@ -261,9 +260,9 @@ def main():
                         # print info
                         frame_number = pt.pageTable[p].frameNumber
                         frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
-                        byte_data = frame_data[d]
+                        signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                         frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                        print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
                     else: # need to invoke page replacement algorithm
                         # get the LRU node
                         lru_node = lruCache.getLRU()
@@ -282,9 +281,9 @@ def main():
                         lruCache.put(p, pt.pageTable[p].frameNumber)
                         # print info
                         frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
-                        byte_data = frame_data[d]
+                        signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                         frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                        print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
 
 
 
