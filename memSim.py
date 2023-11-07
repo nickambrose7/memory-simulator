@@ -57,6 +57,14 @@ class TLB:
             if page == pageNumber:
                 return frame
         return None # if not found
+    def deleteitem(self, pageNumber: int):
+        for i, (page, frame) in enumerate(self.tlb):
+            if page == pageNumber:
+                if i < self.evictionIndex: # so taht we keep our eviction index correct
+                    self.evictionIndex-=1
+                self.tlb.pop(i)
+                return True
+        return False
 
 
 class PageTable: # include a loaded bit for each entry
@@ -67,6 +75,10 @@ class PageTable: # include a loaded bit for each entry
         return self.pageTable[pageNumber].loadedBit == 1
     def getframe(self, pageNumber: int): # get the frame associated with the page number
         return self.pageTable[pageNumber].frameNumber
+    def print(self):
+        for i in range(self.size):
+            if self.pageTable[i].frameNumber is not None:
+                print(f'Page Number: {i}, Frame Number: {self.pageTable[i].frameNumber}, Loaded Bit: {self.pageTable[i].loadedBit}')
 
 class Disk:  # AKA Backing Store
     """
@@ -108,7 +120,6 @@ class RAM: # AKA Physical Memory
     def deleteitem(self, frameNumber: int):
         self.ram[frameNumber] = None
         self.free+=1
-        
 
 class PTEntry:
     def __init__(self, frameNumber: int=None, loadedBit: int=0):
@@ -154,24 +165,29 @@ class LRUCache: # keeps track of the LRU page IN MEMORY
         self._remove_node(res)
         return res
 
-    def get(self, key):
-        node = self.hashmap.get(key, None)
+    def printList(self):
+        node = self.head.next
+        while node != self.tail:
+            print(node.key)
+            print("|")
+            node = node.next
+
+    def getLRU(self): # Get Get LRU from the cache
+        node = self.tail.prev
         if not node:
             return -1
-        self._move_to_head(node)
-        return node.value
+        # self._move_to_head(node)
+        return node
    
-    def getLRU(self):
-        return self.tail.prev # get the node of the LRU page
 
-    def put(self, key, value):
+    def put(self, key, value): # put a new node in the cache, evict is necessary
         node = self.hashmap.get(key)
         if not node:
             new_node = ListNode(key, value)
             self.hashmap[key] = new_node
             self._add_node(new_node)
             
-            if len(self.hashmap) > self.capacity:
+            if len(self.hashmap) > self.capacity: # remove the node
                 tail = self._pop_tail()
                 del self.hashmap[tail.key]
         else:
@@ -218,7 +234,7 @@ def main():
         lruCache = LRUCache(frames)
 
         # while loop that goes through the addresses
-        while (address := f.readline().strip()):      
+        while (address := f.readline().strip()):    
             # increment counter for this page
             address = int(address)            
             num_addr+=1
@@ -266,10 +282,9 @@ def main():
                     else: # need to invoke page replacement algorithm
                         # get the LRU node
                         lru_node = lruCache.getLRU()
-                        # remove the node from the lru_cache, since it will no longer be in memory
-                        lruCache._remove_node(lru_node)
-                        # Delete the frame from memory and update the page table to reflect deletion
+                        # Delete the frame from memory & TLB and update the page table to reflect deletion
                         memory.deleteitem(lru_node.value)
+                        tlb.deleteitem(lru_node.key)
                         pt.pageTable[lru_node.key].loadedBit = 0
                         pt.pageTable[lru_node.key].frameNumber = None
                         # update page table
@@ -283,22 +298,7 @@ def main():
                         frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
                         signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                         frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
-
-
-
-        #check page table, check loaded bit
-            # if hit go to memory
-            # get value
-
-            #else 
-                # page swap
-                    # check for free frames
-                    # get least from lru_counter that is in memory currently
-                    # remove from memory
-                    # add disk page into memory
-                # restart instruction
-    
+                        print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')  
     elif args.pra == "opt": # optimal replacement
         fifo = Queue(maxsize=frames) # to break ties, but could also just use the first value that pops out of min?
         # read all of addresses.txt
@@ -423,6 +423,7 @@ def main():
     print(f'TLB Misses = {tlb_misses}')
     print(f'TLB Hit Rate = {(tlb_hits/tlb_misses):.3f}')
     f.close()
+    pt.print()
 
 def findPageTLB(tlb, frame_num):
     index = None
