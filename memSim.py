@@ -79,6 +79,41 @@ class PageTable: # include a loaded bit for each entry
         for i in range(self.size):
             if self.pageTable[i].frameNumber is not None:
                 print(f'Page Number: {i}, Frame Number: {self.pageTable[i].frameNumber}, Loaded Bit: {self.pageTable[i].loadedBit}')
+    def findLongestUnused(self, futurePages: List[int]):
+        """
+        This method is needed for the OPT page replacement algorithm.
+        Future pages is a list of page numbers that will be referenced in the future.
+        Goal: Find the page that is currently in the page table that will not be used for the longest time.
+        1.) Get all the pages that are currently loaded into memory.
+        2.) For each page, find the index of the next time it will be referenced.
+        3.) Return the page with the longest time until next reference.
+            -- time = index in futurePages, we want to return the largest index
+            -- return a page frame pair
+        """
+        # 1.) Get all the pages that are currently loaded into memory.
+        loadedPages = []
+        for i in range(self.size):
+            if self.pageTable[i].loadedBit == 1:
+                loadedPages.append((i, self.pageTable[i].frameNumber)) # append a tuple of (page, frame)
+        # 2.) For each page, find the index of the next time it will be referenced.
+        longestUnused = None
+        maxInd = -1
+        for page in loadedPages:
+            used = False
+            for i in range(len(futurePages)):
+                if page[0] == futurePages[i]:
+                    used = True
+                    if i > maxInd:
+                        maxInd = i
+                        longestUnused = page
+                    break
+            if not used:
+                return page
+        if longestUnused is None: 
+        # none of the currently loaded pages are reference in the future, so just evict the first one
+            return loadedPages[0]
+        return longestUnused
+       
 
 class Disk:  # AKA Backing Store
     """
@@ -194,6 +229,13 @@ class LRUCache: # keeps track of the LRU page IN MEMORY
             node.value = value
             self._move_to_head(node)
 
+# print helper function so that we have less code
+def printInfo(pt, memory, address, p, d, frame_number):
+    frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
+    signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
+    frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
+    print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')  
+
 # Main will do all the simulation logic, prob should use helper functions.
 def main():
 
@@ -248,20 +290,14 @@ def main():
                 tlb_hits+=1
                 frame_number = tlb.getitem(p) # get frame number from tlb
                 lruCache.put(p, frame_number) # update lru_cache
-                frame_data = memory.getitem(frame_number) # get frame data from memory
-                signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
-                frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
+                printInfo(pt, memory, address, p, d, frame_number)
             else: # check page table
                 tlb_misses+=1
                 # check page table
                 if pt.contains(p): # no page fault
                     frame_number = pt.getframe(p) # get frame number from page table
                     lruCache.put(p, frame_number) # update lru_cache
-                    frame_data = memory.getitem(frame_number) # get frame data from memory
-                    signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
-                    frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                    print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
+                    printInfo(pt, memory, address, p, d, frame_number)
                 else: # page fault
                     page_faults+=1
                     # check for free frames
@@ -275,10 +311,7 @@ def main():
                         lruCache.put(p, pt.pageTable[p].frameNumber)
                         # print info
                         frame_number = pt.pageTable[p].frameNumber
-                        frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
-                        signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
-                        frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')
+                        printInfo(pt, memory, address, p, d, frame_number)
                     else: # need to invoke page replacement algorithm
                         # get the LRU node
                         lru_node = lruCache.getLRU()
@@ -295,31 +328,64 @@ def main():
                         # update the lru_cache
                         lruCache.put(p, pt.pageTable[p].frameNumber)
                         # print info
-                        frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
-                        signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
-                        frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')  
+                        frame_number = pt.pageTable[p].frameNumber
+                        printInfo(pt, memory, address, p, d, frame_number)
     elif args.pra == "opt": # optimal replacement
-        fifo = Queue(maxsize=frames) # to break ties, but could also just use the first value that pops out of min?
-        # read all of addresses.txt
-            # do conversions and add all instances of each page
-            # store in array
+        # read the addresses into a list
+        pages = []
+        while (address := f.readline().strip()):
+            pages.append(int(address) // PAGE_SIZE)
+        # reset file pointer
+        f.seek(0)
+
         # while loop that goes through the addresses
-            # decement counter for this page
-        # check tlb, check loaded bit
+        while (address := f.readline().strip()):    
+            # increment counter for this page
+            address = int(address)            
+            num_addr+=1
 
-        #check page table, check loaded bit
-            # if hit go to memory
-            # get value
-
-            #else 
-                # page swap
+            # break down into page number and offset
+            p = address // PAGE_SIZE # page number
+            d = address % PAGE_SIZE # page offset
+            if tlb.contains(p):
+                tlb_hits+=1
+                frame_number = tlb.getitem(p) # get frame number from tlb
+                printInfo(pt, memory, address, p, d, frame_number)
+            else: # check page table
+                tlb_misses+=1
+                # check page table
+                if pt.contains(p): # no page fault
+                    frame_number = pt.getframe(p) # get frame number from page table
+                    printInfo(pt, memory, address, p, d, frame_number)
+                else: # page fault
+                    page_faults+=1
                     # check for free frames
-                    # get least from lru_counter that is in memory currently
-                    # remove from memory
-                    # add disk page into memory
-                # restart instruction
-        pass
+                    if memory.free > 0: # if there are free frames, write to memory, update page table, update tlb
+                        # update page table and write to memory
+                        pt.pageTable[p].frameNumber = memory.setitem(disk.disk[p]) # write frame data to memory
+                        pt.pageTable[p].loadedBit = 1
+                        # update tlb
+                        tlb.add(p, pt.pageTable[p].frameNumber)
+                        # print info
+                        frame_number = pt.pageTable[p].frameNumber
+                        printInfo(pt, memory, address, p, d, frame_number)
+                    else: # need to invoke page replacement algorithm
+                        # get frame to remove
+                        rmvPage, rmvFrame = pt.findLongestUnused(pages[num_addr:])
+                        # Delete the frame from memory & TLB and update the page table to reflect deletion
+                        memory.deleteitem(rmvFrame)
+                        tlb.deleteitem(rmvPage)
+                        pt.pageTable[rmvPage].loadedBit = 0
+                        pt.pageTable[rmvPage].frameNumber = None
+                        # update page table
+                        pt.pageTable[p].frameNumber = memory.setitem(disk.disk[p]) # write frame data to memory
+                        pt.pageTable[p].loadedBit = 1
+                        # update the tlb
+                        tlb.add(p, pt.pageTable[p].frameNumber)
+                        # print info
+                        frame_number = pt.pageTable[p].frameNumber
+                        printInfo(pt, memory, address, p, d, frame_number)
+        
     
     else:   # first in first out
         # fifo queue
@@ -423,7 +489,6 @@ def main():
     print(f'TLB Misses = {tlb_misses}')
     print(f'TLB Hit Rate = {(tlb_hits/tlb_misses):.3f}')
     f.close()
-    pt.print()
 
 def findPageTLB(tlb, frame_num):
     index = None
