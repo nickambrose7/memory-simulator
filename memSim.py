@@ -35,7 +35,7 @@ class TLB:
     The .getitem() method will return the frame number associated with a page number.
     We are doing a linear search here becasue the tlb is small.
     """
-    def __init__(self, size: int=16):
+    def __init__(self, size: int=TLB_SIZE):
         self.size = size
         self.tlb = []
         self.evictionIndex = 0 # need to keep track of what we want to evict
@@ -57,6 +57,17 @@ class TLB:
             if page == pageNumber:
                 return frame
         return None # if not found
+    def deleteitem(self, pageNumber: int):
+        for i, (page, frame) in enumerate(self.tlb):
+            if page == pageNumber:
+                if i < self.evictionIndex: # so taht we keep our eviction index correct
+                    self.evictionIndex-=1
+                self.tlb.pop(i)
+                return True
+        return False
+
+    def __str__(self):
+        return repr(self.tlb)
 
 
 class PageTable: # include a loaded bit for each entry
@@ -67,6 +78,45 @@ class PageTable: # include a loaded bit for each entry
         return self.pageTable[pageNumber].loadedBit == 1
     def getframe(self, pageNumber: int): # get the frame associated with the page number
         return self.pageTable[pageNumber].frameNumber
+    def print(self):
+        for i in range(self.size):
+            if self.pageTable[i].frameNumber is not None:
+                print(f'Page Number: {i}, Frame Number: {self.pageTable[i].frameNumber}, Loaded Bit: {self.pageTable[i].loadedBit}')
+    def findLongestUnused(self, futurePages: List[int]):
+        """
+        This method is needed for the OPT page replacement algorithm.
+        Future pages is a list of page numbers that will be referenced in the future.
+        Goal: Find the page that is currently in the page table that will not be used for the longest time.
+        1.) Get all the pages that are currently loaded into memory.
+        2.) For each page, find the index of the next time it will be referenced.
+        3.) Return the page with the longest time until next reference.
+            -- time = index in futurePages, we want to return the largest index
+            -- return a page frame pair
+        """
+        # 1.) Get all the pages that are currently loaded into memory.
+        loadedPages = []
+        for i in range(self.size):
+            if self.pageTable[i].loadedBit == 1:
+                loadedPages.append((i, self.pageTable[i].frameNumber)) # append a tuple of (page, frame)
+        # 2.) For each page, find the index of the next time it will be referenced.
+        longestUnused = None
+        maxInd = -1
+        for page in loadedPages:
+            used = False
+            for i in range(len(futurePages)):
+                if page[0] == futurePages[i]:
+                    used = True
+                    if i > maxInd:
+                        maxInd = i
+                        longestUnused = page
+                    break
+            if not used:
+                return page
+        if longestUnused is None: 
+        # none of the currently loaded pages are reference in the future, so just evict the first one
+            return loadedPages[0]
+        return longestUnused
+       
 
 class Disk:  # AKA Backing Store
     """
@@ -108,13 +158,14 @@ class RAM: # AKA Physical Memory
     def deleteitem(self, frameNumber: int):
         self.ram[frameNumber] = None
         self.free+=1
-        
-    
 
 class PTEntry:
     def __init__(self, frameNumber: int=None, loadedBit: int=0):
         self.frameNumber = frameNumber # 0 == not loaded into RAM, 1 == loaded
         self.loadedBit = loadedBit 
+
+    def __repr__(self):
+        return repr("(%d, %d}", self.frameNumber, self.loadedBit)
 
 
 # OBJECTS FOR THE LRU IMPLEMENTATION:
@@ -155,29 +206,41 @@ class LRUCache: # keeps track of the LRU page IN MEMORY
         self._remove_node(res)
         return res
 
-    def get(self, key):
-        node = self.hashmap.get(key, None)
+    def printList(self):
+        node = self.head.next
+        while node != self.tail:
+            print(node.key)
+            print("|")
+            node = node.next
+
+    def getLRU(self): # Get Get LRU from the cache
+        node = self.tail.prev
         if not node:
             return -1
-        self._move_to_head(node)
-        return node.value
+        # self._move_to_head(node)
+        return node
    
-    def getLRU(self):
-        return self.tail.prev # get the node of the LRU page
 
-    def put(self, key, value):
+    def put(self, key, value): # put a new node in the cache, evict is necessary
         node = self.hashmap.get(key)
         if not node:
             new_node = ListNode(key, value)
             self.hashmap[key] = new_node
             self._add_node(new_node)
             
-            if len(self.hashmap) > self.capacity:
+            if len(self.hashmap) > self.capacity: # remove the node
                 tail = self._pop_tail()
                 del self.hashmap[tail.key]
         else:
             node.value = value
             self._move_to_head(node)
+
+# print helper function so that we have less code
+def printInfo(pt, memory, address, p, d, frame_number):
+    frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
+    signed_byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
+    frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
+    print(f'{str(address)}, {signed_byte_data}, {str(frame_number)}, {frame_data_hex}')  
 
 # Main will do all the simulation logic, prob should use helper functions.
 def main():
@@ -219,7 +282,7 @@ def main():
         lruCache = LRUCache(frames)
 
         # while loop that goes through the addresses
-        while (address := f.readline().strip()):      
+        while (address := f.readline().strip()):    
             # increment counter for this page
             address = int(address)            
             num_addr+=1
@@ -233,20 +296,14 @@ def main():
                 tlb_hits+=1
                 frame_number = tlb.getitem(p) # get frame number from tlb
                 lruCache.put(p, frame_number) # update lru_cache
-                frame_data = memory.getitem(frame_number) # get frame data from memory
-                byte_data = frame_data[d] # get specific byte data
-                frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                printInfo(pt, memory, address, p, d, frame_number)
             else: # check page table
                 tlb_misses+=1
                 # check page table
                 if pt.contains(p): # no page fault
                     frame_number = pt.getframe(p) # get frame number from page table
                     lruCache.put(p, frame_number) # update lru_cache
-                    frame_data = memory.getitem(frame_number) # get frame data from memory
-                    byte_data = frame_data[d]
-                    frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                    print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                    printInfo(pt, memory, address, p, d, frame_number)
                 else: # page fault
                     page_faults+=1
                     # check for free frames
@@ -260,17 +317,13 @@ def main():
                         lruCache.put(p, pt.pageTable[p].frameNumber)
                         # print info
                         frame_number = pt.pageTable[p].frameNumber
-                        frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
-                        byte_data = frame_data[d]
-                        frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
+                        printInfo(pt, memory, address, p, d, frame_number)
                     else: # need to invoke page replacement algorithm
                         # get the LRU node
                         lru_node = lruCache.getLRU()
-                        # remove the node from the lru_cache, since it will no longer be in memory
-                        lruCache._remove_node(lru_node)
-                        # Delete the frame from memory and update the page table to reflect deletion
+                        # Delete the frame from memory & TLB and update the page table to reflect deletion
                         memory.deleteitem(lru_node.value)
+                        tlb.deleteitem(lru_node.key)
                         pt.pageTable[lru_node.key].loadedBit = 0
                         pt.pageTable[lru_node.key].frameNumber = None
                         # update page table
@@ -281,46 +334,64 @@ def main():
                         # update the lru_cache
                         lruCache.put(p, pt.pageTable[p].frameNumber)
                         # print info
-                        frame_data = memory.getitem(pt.pageTable[p].frameNumber) # get frame data from memory
-                        byte_data = frame_data[d]
-                        frame_data_hex = ''.join(format(b, '02x') for b in frame_data).upper()
-                        print(f'{str(address)}, {str(byte_data)}, {str(frame_number)}, {frame_data_hex}')
-
-
-
-        #check page table, check loaded bit
-            # if hit go to memory
-            # get value
-
-            #else 
-                # page swap
-                    # check for free frames
-                    # get least from lru_counter that is in memory currently
-                    # remove from memory
-                    # add disk page into memory
-                # restart instruction
-    
+                        frame_number = pt.pageTable[p].frameNumber
+                        printInfo(pt, memory, address, p, d, frame_number)
     elif args.pra == "opt": # optimal replacement
-        fifo = Queue(maxsize=frames) # to break ties, but could also just use the first value that pops out of min?
-        # read all of addresses.txt
-            # do conversions and add all instances of each page
-            # store in array
+        # read the addresses into a list
+        pages = []
+        while (address := f.readline().strip()):
+            pages.append(int(address) // PAGE_SIZE)
+        # reset file pointer
+        f.seek(0)
+
         # while loop that goes through the addresses
-            # decement counter for this page
-        # check tlb, check loaded bit
+        while (address := f.readline().strip()):    
+            # increment counter for this page
+            address = int(address)            
+            num_addr+=1
 
-        #check page table, check loaded bit
-            # if hit go to memory
-            # get value
-
-            #else 
-                # page swap
+            # break down into page number and offset
+            p = address // PAGE_SIZE # page number
+            d = address % PAGE_SIZE # page offset
+            if tlb.contains(p):
+                tlb_hits+=1
+                frame_number = tlb.getitem(p) # get frame number from tlb
+                printInfo(pt, memory, address, p, d, frame_number)
+            else: # check page table
+                tlb_misses+=1
+                # check page table
+                if pt.contains(p): # no page fault
+                    frame_number = pt.getframe(p) # get frame number from page table
+                    printInfo(pt, memory, address, p, d, frame_number)
+                else: # page fault
+                    page_faults+=1
                     # check for free frames
-                    # get least from lru_counter that is in memory currently
-                    # remove from memory
-                    # add disk page into memory
-                # restart instruction
-        pass
+                    if memory.free > 0: # if there are free frames, write to memory, update page table, update tlb
+                        # update page table and write to memory
+                        pt.pageTable[p].frameNumber = memory.setitem(disk.disk[p]) # write frame data to memory
+                        pt.pageTable[p].loadedBit = 1
+                        # update tlb
+                        tlb.add(p, pt.pageTable[p].frameNumber)
+                        # print info
+                        frame_number = pt.pageTable[p].frameNumber
+                        printInfo(pt, memory, address, p, d, frame_number)
+                    else: # need to invoke page replacement algorithm
+                        # get frame to remove
+                        rmvPage, rmvFrame = pt.findLongestUnused(pages[num_addr:])
+                        # Delete the frame from memory & TLB and update the page table to reflect deletion
+                        memory.deleteitem(rmvFrame)
+                        tlb.deleteitem(rmvPage)
+                        pt.pageTable[rmvPage].loadedBit = 0
+                        pt.pageTable[rmvPage].frameNumber = None
+                        # update page table
+                        pt.pageTable[p].frameNumber = memory.setitem(disk.disk[p]) # write frame data to memory
+                        pt.pageTable[p].loadedBit = 1
+                        # update the tlb
+                        tlb.add(p, pt.pageTable[p].frameNumber)
+                        # print info
+                        frame_number = pt.pageTable[p].frameNumber
+                        printInfo(pt, memory, address, p, d, frame_number)
+        
     
     else:   # first in first out
         # fifo queue
@@ -341,7 +412,18 @@ def main():
                 tlb_hits+=1 # increment tlb_hits
                 frame_number = tlb.getitem(p) # get frame number from page-frame pair
                 frame_data = memory.getitem(frame_number)
-                byte_data = frame_data[d]
+                byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
+
+                # update tlb
+                if tlb.size >= TLB_SIZE:
+                    tlb_remove = findPageTLB(tlb.tlb, frame_number)
+                    if tlb_remove is not None:
+                        if tlb.size != 0:
+                            tlb.deleteitem(tlb_remove)
+                    tlb.add(p, frame_number)
+                else:
+                    tlb.add(p, frame_number)
+
                 print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(format(i, '02x') for i in frame_data).upper()))
                 # Question: if a page#, frame# pair is in the tlb is it guarenteed to be in memory...do we need to check for page faulting here?
             
@@ -352,44 +434,60 @@ def main():
                 if pt.contains(p): # if hit go to memory
                     frame_number = pt.getframe(p) # get frame number from page table
                     frame_data = memory.getitem(frame_number)
-                    byte_data = frame_data[d] # get value
+                    byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True) # get value
+
+                    # update TLB
+                    # update tlb
+                    if tlb.size >= TLB_SIZE:
+                        tlb_remove = findPageTLB(tlb.tlb, frame_number)
+                        if tlb_remove is not None:
+                            if tlb.size != 0:
+                                tlb.deleteitem(tlb_remove)
+                        tlb.add(p, frame_number)
+                    else:
+                        tlb.add(p, frame_number)
+
                     print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(format(i, '02x') for i in frame_data).upper()))
                 
                 else: # page fault
                     page_faults+=1
                     # check for free frames
                     if memory.free != 0:
-                        free_index = frames - memory.free
-                        memory.ram[free_index] = disk.disk.get(p) # could change memory method setitem -> additem and make a true setitem
-                        memory.free = memory.free - 1
+                        free_index = memory.setitem(disk.disk.get(p)) # could change memory method setitem -> additem and make a true setitem
 
                         # update pageTable
                         pt.pageTable[p].frameNumber = free_index
                         pt.pageTable[p].loadedBit = 1
 
                         # update tlb
-                        tlb.add(p, free_index)
+                        if tlb.size >= TLB_SIZE:
+                            tlb_remove = findPageTLB(tlb.tlb, free_index)
+                            if tlb_remove is not None:
+                                if tlb.size != 0:
+                                    tlb.deleteitem(tlb_remove)
+                            tlb.add(p, free_index)
+                        else:
+                            tlb.add(p, free_index)
 
                         # put frame in queue
                         fifo.put(free_index)
                         
                         # get data and print
-                        frame_data = memory.ram[free_index]
-                        byte_data = frame_data[d]
+                        frame_data = memory.getitem(free_index)
+                        byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                         print("{}, {}, {}, {}".format(address, byte_data, free_index, ''.join(format(i, '02x') for i in frame_data).upper()))
 
                     else: # page swap
                         # pop queue
-                        removal_index = fifo.pop()
+                        removal_index = fifo.get()
                         # QUESTION: should we remove entries in the tlb if they correspond to this frame number?
 
                         # remove from memory - do this by overwriting with new page
                         # add disk page into memory
                         memory.ram[removal_index] = disk.disk.get(p)
-                        memory.free-=1
 
                         # update pageTable
-                        pt_reset = findPagePT(pt, removal_index)
+                        pt_reset = findPagePT(pt.pageTable, removal_index)
                         if pt_reset is not None:
                             pt.pageTable[pt_reset].frameNumber = None
                             pt.pageTable[pt_reset].loadedBit = 0
@@ -397,20 +495,22 @@ def main():
                         pt.pageTable[p].frameNumber = removal_index
                         pt.pageTable[p].loadedBit = 1
 
-
-
                         # update tlb
-                        tlb_remove = findPageTLB(tlb.tlb, removal_index)
-                        if tlb_remove is not None:
-                            tlb.tlb.pop(tlb_remove)
-                        tlb.add(p, removal_index)
+                        if tlb.size >= TLB_SIZE:
+                            tlb_remove = findPageTLB(tlb.tlb, removal_index)
+                            if tlb_remove is not None:
+                                if tlb.size != 0:
+                                    tlb.deleteitem(tlb_remove)
+                            tlb.add(p, removal_index)
+                        else:
+                            tlb.add(p, removal_index)
 
                         # put frame in queue
                         fifo.put(removal_index)
 
                         # get data and print result
                         frame_data = memory.ram[removal_index]
-                        byte_data = frame_data[d]
+                        byte_data = int.from_bytes([frame_data[d]], byteorder='little', signed=True)
                         print("{}, {}, {}, {}".format(address, byte_data, removal_index, ''.join(format(i, '02x') for i in frame_data).upper()))
                     
                     # restart instruction, sike just print the info in the if, else block to simulate restarting
@@ -422,7 +522,7 @@ def main():
     print(f'Page Fault Rate = {(page_faults/num_addr):.3f}')
     print(f'TLB Hits = {tlb_hits}')
     print(f'TLB Misses = {tlb_misses}')
-    print(f'TLB Hit Rate = {(tlb_hits/tlb_misses):.3f}')
+    print(f'TLB Hit Rate = {(tlb_hits/num_addr):.3f}')
     f.close()
 
 def findPageTLB(tlb, frame_num):
@@ -437,8 +537,9 @@ def findPageTLB(tlb, frame_num):
 
 def findPagePT(pt, frame_num):
     index = None
+    print(len(pt))
     for x in range(len(pt)):
-        if frame_num == pt.pageTable[x].frameNumber:
+        if frame_num == pt[x].frameNumber:
             index = x
 
     return index
