@@ -342,7 +342,7 @@ def main():
                 frame_number = tlb.getitem(p) # get frame number from page-frame pair
                 frame_data = memory.getitem(frame_number)
                 byte_data = frame_data[d]
-                print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(str(i) for i in frame_data)))
+                print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(format(i, '02x') for i in frame_data).upper()))
                 # Question: if a page#, frame# pair is in the tlb is it guarenteed to be in memory...do we need to check for page faulting here?
             
             else:
@@ -353,7 +353,7 @@ def main():
                     frame_number = pt.getframe(p) # get frame number from page table
                     frame_data = memory.getitem(frame_number)
                     byte_data = frame_data[d] # get value
-                    print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(str(i) for i in frame_data)))
+                    print("{}, {}, {}, {}".format(address, byte_data, frame_number, ''.join(format(i, '02x') for i in frame_data).upper()))
                 
                 else: # page fault
                     page_faults+=1
@@ -376,7 +376,7 @@ def main():
                         # get data and print
                         frame_data = memory.ram[free_index]
                         byte_data = frame_data[d]
-                        print("{}, {}, {}, {}".format(address, byte_data, free_index, ''.join(str(i) for i in frame_data)))
+                        print("{}, {}, {}, {}".format(address, byte_data, free_index, ''.join(format(i, '02x') for i in frame_data).upper()))
 
                     else: # page swap
                         # pop queue
@@ -411,7 +411,7 @@ def main():
                         # get data and print result
                         frame_data = memory.ram[removal_index]
                         byte_data = frame_data[d]
-                        print("{}, {}, {}, {}".format(address, byte_data, removal_index, ''.join(str(i) for i in frame_data)))
+                        print("{}, {}, {}, {}".format(address, byte_data, removal_index, ''.join(format(i, '02x') for i in frame_data).upper()))
                     
                     # restart instruction, sike just print the info in the if, else block to simulate restarting
                     # restarting means looking at only the page table, not the tlb
