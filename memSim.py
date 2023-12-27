@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List
 from queue import Queue
 import argparse
 
@@ -7,25 +7,6 @@ PAGE_SIZE = 2**8 # bytes
 FRAME_SIZE = PAGE_SIZE
 DISK_SIZE = PAGE_TABLE_SIZE * PAGE_SIZE # bytes
 TLB_SIZE = 16
-
-
-#Ethan's TLB:
-# class TLB: # pretty much just a cache, FIFO TLB, might be better to make this a dictionary with key is page number better for searching
-#     def __init__(self, size: int=TLB_SIZE):
-#         self.size = size
-#         self.tlb = {} #changed this to a dictionary 
-#         self.evictionIndex = 0 # need to keep track of what we want to evict
-
-#     def add(self, pageNumber: int, frameNumber: int):
-#         # if the tlb is full, remove the first element
-#         if len(self.tlb) < self.size: # if the tlb is not full
-#             self.tlb[pageNumber] = frameNumber
-#         else: # if the tlb is full
-#             removal_key = list(self.tlb)[self.evictionIndex]
-#             self.tlb.pop(removal_key)
-#             self.tlb[pageNumber] = frameNumber
-#             #self.evictionIndex = (self.evictionIndex + 1) % self.size  ### what does this do?
-#             #  --> that's the FIFO part, it's a circular queue (or it used to be)
 
 class TLB: 
     """
